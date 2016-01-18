@@ -173,15 +173,6 @@ rf <- randomForest (Loan_Status ~ Gender +
 
 
 
-rf <- randomForest (Loan_Status ~  
-                      Credit_History + 
-                      total_income_log + 
-                      LoanAmount_log +
-                      Dependents +
-                      Property_Area
-                    , data = trainset,mtry=2, ntree=50,importance=T)
-
-
 rf
 plot(rf)
 varImpPlot(rf,type=2)
