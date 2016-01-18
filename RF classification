@@ -1,0 +1,290 @@
+#Clearing R console
+rm(list=ls())
+
+#Set the working directory
+setwd("C:/Users/Sharath P Dandamudi/Desktop/Loan")
+
+
+#Import dataset
+loan_raw <- read.csv("train.csv", na.strings=c("NA", ""), header = TRUE)
+
+#Checking contents of dataset
+str(loan_raw)
+
+#loan_raw <-loan_raw[loan_raw$ApplicantIncome > 0]
+
+#Changing variable type of Credit history and CoapplicantIncome
+loan_raw$Credit_History=factor(loan_raw$Credit_History)
+loan_raw$CoapplicantIncome=as.integer(loan_raw$CoapplicantIncome)
+
+
+#Initiating library Amelia
+library(Amelia)
+
+#Checking for missing values
+sapply(loan_raw, function(df) {
+   sum(is.na(df)==TRUE)/ length(df);
+   })
+
+#Heat map to get a visual of missing value proportion 
+missmap(loan_raw, main="Missing Map")
+
+#Imputation - Credit History
+#table(loan_raw$Credit_History, useNA = "always")
+#loan_raw$Credit_History[which(is.na(loan_raw$Credit_History))] = '1'
+#table(loan_raw$Credit_History, useNA = "always")
+
+#Imputation - Self employed
+table(loan_raw$Self_Employed, useNA = "always")
+loan_raw$Self_Employed[which(is.na(loan_raw$Self_Employed))] = 'No'
+table(loan_raw$Self_Employed, useNA = "always")
+
+
+#Imputation - Dependents
+table(loan_raw$Dependents, useNA = "always")
+loan_raw$Dependents[which(is.na(loan_raw$Dependents))] = '0'
+table(loan_raw$Dependents, useNA = "always")
+
+#Imputation - Gender
+table(loan_raw$Gender, useNA = "always")
+loan_raw$Gender[which(is.na(loan_raw$Gender))] <- 'Male'
+table(loan_raw$Gender)
+
+#Imputation - Married 
+table(loan_raw$Married, useNA = "always")
+loan_raw$Married [which(is.na(loan_raw$Married))] <- 'Yes'
+table(loan_raw$Married)
+
+#Creating a new variable - Total income
+loan_raw$total_income <- loan_raw$ApplicantIncome + loan_raw$CoapplicantIncome
+
+
+#Histogram to view the distribution of continuous variables
+hist(loan_raw$LoanAmount, main="LoanAmount", xlab = "Loan Amount")
+hist(loan_raw$Loan_Amount_Term, main="Loan_Amount_Term", xlab = "Loan Amount Term")
+hist(loan_raw$ApplicantIncome, main="ApplicantIncome", xlab = "Applicant Income")
+hist(loan_raw$CoapplicantIncome, main="CoapplicantIncome", xlab = "Coapplicant Income")
+hist(loan_raw$total_income, main="total_income", xlab = "Total Income")
+
+#Boxplot to detect outliers
+boxplot(loan_raw$LoanAmount, main="LoanAmount",ylab="Loan Amount")
+boxplot(loan_raw$Loan_Amount_Term, main="Loan_Amount_Term",ylab="Loan Amount Term")
+boxplot(loan_raw$ApplicantIncome, main="ApplicantIncome",ylab="Applicant Income")
+boxplot(loan_raw$CoapplicantIncome, main="CoapplicantIncome",ylab="Coapplicant Income")
+boxplot(loan_raw$total_income, main="total_income",ylab="Total Income")
+
+#Imputing missing values of Loan amount using regression
+predictedLoanAmount <- rpart(LoanAmount ~ Gender + Married + Dependents + Education + Self_Employed 
+                             + total_income + Loan_Amount_Term + Credit_History + Property_Area,
+                             data=loan_raw[!is.na(loan_raw$LoanAmount),], method="anova")
+
+loan_raw$LoanAmount[is.na(loan_raw$LoanAmount)] <- predict(predictedLoanAmount, loan_raw[is.na(loan_raw$LoanAmount),])
+
+
+#Applying log transformation on variables having outliers
+loan_raw$LoanAmount_log <- log(loan_raw$LoanAmount)
+loan_raw$total_income_log <- log(loan_raw$total_income)
+
+#Checking distribution after imputation
+hist(loan_raw$LoanAmount_log, main="LoanAmount_log", xlab = "Loan Amount Log")
+boxplot(loan_raw$LoanAmount_log, main="LoanAmount_log",ylab="Loan Amount Log")
+
+hist(loan_raw$total_income_log, main="total_income_log", xlab = "total_income_log")
+boxplot(loan_raw$total_income_log, main="total_income_log",ylab="total_income_log")
+
+
+
+#Imputing missing values of Loan amount using regression
+predictedLoan_Amount_Term <- rpart(Loan_Amount_Term
+                             ~ Gender + Married + Dependents + Education + Self_Employed 
+                             + total_income + LoanAmount + Credit_History + Property_Area,
+                             data=loan_raw[!is.na(loan_raw$Loan_Amount_Term),], method="anova")
+
+loan_raw$Loan_Amount_Term[is.na(loan_raw$Loan_Amount_Term)] <- predict(predictedLoan_Amount_Term, 
+                                                                       loan_raw[is.na(loan_raw$Loan_Amount_Term),])
+
+#Changing variable type of Loan amount and Loan amount term after imputation
+loan_raw$LoanAmount=as.integer(loan_raw$LoanAmount)
+loan_raw$Loan_Amount_Term=as.integer(loan_raw$Loan_Amount_Term)
+
+
+library(party)
+
+#Imputing missing values of Loan amount using CHAID
+predicted_cred_hist <- ctree(Credit_History 
+                              ~ Married + Dependents +
+                                Education + Self_Employed +
+                                ApplicantIncome,
+              data =loan_raw[!is.na(loan_raw$Credit_History),])
+
+
+loan_raw$Credit_History[is.na(loan_raw$Credit_History)] <- predict(predicted_cred_hist, 
+                                                                       loan_raw[is.na(loan_raw$Credit_History),])
+
+#Creating additional features
+loan_raw$EMI <- (loan_raw$LoanAmount*1000)/loan_raw$Loan_Amount_Term
+loan_raw$DTI_combi <- loan_raw$EMI/loan_raw$total_income
+loan_raw$DTI_prim <- loan_raw$EMI/loan_raw$ApplicantIncome
+
+#loan_raw$DTI_combi_log <- log(loan_raw$EMI/loan_raw$total_income)
+#loan_raw$DTI_prim_log <- log(loan_raw$EMI/loan_raw$ApplicantIncome)
+
+
+#Changing variable type of EMI
+loan_raw$EMI=as.integer(loan_raw$EMI)
+
+str(loan_raw)
+# View(loan_raw)
+
+#Spliting dataset into training and validation
+split.data = function(data, p = 0.7, s = 222){
+  set.seed(s)
+  index = sample(1:dim(data)[1])
+  train = data[index[1:floor(dim(data)[1] * p)], ]
+  test = data[index[((ceiling(dim(data)[1] * p)) +
+                       1):dim(data)[1]], ]
+  return(list(train = train, test = test))
+}
+
+allset= split.data(loan_raw, p = 0.7)
+trainset = allset$train
+testset = allset$test
+
+#============================= RF - TRAIN=============================# 
+
+library(randomForest)
+
+#Build Random forest model
+
+#Submission - 2
+rf <- randomForest (Loan_Status ~ Gender + 
+                      Married + 
+                      Dependents + 
+                      Education + 
+                      Self_Employed + 
+                      LoanAmount_log + 
+                      Loan_Amount_Term + 
+                      Credit_History + 
+                      Property_Area + 
+                      EMI +
+                      DTI_combi +
+                      total_income_log 
+                    , data = trainset,mtry=2, ntree=50,importance=T)
+
+
+
+rf <- randomForest (Loan_Status ~  
+                      Credit_History + 
+                      total_income_log + 
+                      LoanAmount_log +
+                      Dependents +
+                      Property_Area
+                    , data = trainset,mtry=2, ntree=50,importance=T)
+
+
+rf
+plot(rf)
+varImpPlot(rf,type=2)
+
+#Making predictions on test data - RF
+predicted2 <- predict(rf,testset)
+head(predicted2)
+
+library(caret)
+
+#Testing accuracy of model - RF
+confusionMatrix(predicted2, testset$Loan_Status)
+
+#=============================SCORING =============================# 
+#Importing actual test data
+loan_test <- read.csv("test.csv", na.strings=c("NA", ""), header = TRUE)
+
+#Checking contents of dataset
+str(loan_test)
+
+#Changing variable type of Credit history and CoapplicantIncome
+loan_test$Credit_History=factor(loan_test$Credit_History)
+loan_test$CoapplicantIncome=as.integer(loan_test$CoapplicantIncome)
+
+#Imputation - Self employed
+table(loan_test$Self_Employed, useNA = "always")
+loan_test$Self_Employed[which(is.na(loan_test$Self_Employed))] = 'No'
+table(loan_test$Self_Employed, useNA = "always")
+
+
+#Imputation - Dependents
+table(loan_test$Dependents, useNA = "always")
+loan_test$Dependents[which(is.na(loan_test$Dependents))] = '0'
+table(loan_test$Dependents, useNA = "always")
+
+#Imputation - Gender
+table(loan_test$Gender, useNA = "always")
+loan_test$Gender[which(is.na(loan_test$Gender))] <- 'Male'
+table(loan_test$Gender)
+
+#Imputation - Married 
+table(loan_test$Married, useNA = "always")
+loan_test$Married [which(is.na(loan_test$Married))] <- 'Yes'
+table(loan_test$Married)
+
+#Creating a new variable - Total income
+loan_test$total_income <- loan_test$ApplicantIncome + loan_test$CoapplicantIncome
+
+
+#Imputing missing values of Loan amount using regression
+predictedLoanAmount <- rpart(LoanAmount ~ Gender + Married + Dependents + Education + Self_Employed 
+                             + total_income + Loan_Amount_Term + Credit_History + Property_Area,
+                             data=loan_test[!is.na(loan_test$LoanAmount),], method="anova")
+
+loan_test$LoanAmount[is.na(loan_test$LoanAmount)] <- predict(predictedLoanAmount, loan_test[is.na(loan_test$LoanAmount),])
+
+#Applying log transformation on variables having outliers
+loan_test$LoanAmount_log <- log(loan_test$LoanAmount)
+loan_test$total_income_log <- log(loan_test$total_income)
+
+
+#Imputing missing values of Loan amount using regression
+predictedLoan_Amount_Term <- rpart(Loan_Amount_Term
+                                   ~ Gender + Married + Dependents + Education + Self_Employed 
+                                   + total_income + LoanAmount + Credit_History + Property_Area,
+                                   data=loan_test[!is.na(loan_test$Loan_Amount_Term),], method="anova")
+
+loan_test$Loan_Amount_Term[is.na(loan_test$Loan_Amount_Term)] <- predict(predictedLoan_Amount_Term, 
+                                                                         loan_test[is.na(loan_test$Loan_Amount_Term),])
+
+#Changing variable type of Loan amount and Loan amount term after imputation
+loan_test$LoanAmount=as.integer(loan_test$LoanAmount)
+loan_test$Loan_Amount_Term=as.integer(loan_test$Loan_Amount_Term)
+
+#Imputing missing values of Loan amount using CHAID
+predicted_cred_hist <- ctree(Credit_History 
+                             ~ Married + Dependents +
+                               Education + Self_Employed +
+                               ApplicantIncome,
+                             data =loan_test[!is.na(loan_test$Credit_History),])
+
+
+loan_test$Credit_History[is.na(loan_test$Credit_History)] <- predict(predicted_cred_hist, 
+                                                                     loan_test[is.na(loan_test$Credit_History),])
+
+
+#Creating additional features
+loan_test$EMI <- (loan_test$LoanAmount*1000)/loan_test$Loan_Amount_Term
+loan_test$DTI_combi <- loan_test$EMI/loan_test$total_income
+loan_test$DTI_prim <- loan_test$EMI/loan_test$ApplicantIncome
+
+#Changing variable type of EMI
+loan_test$EMI=as.integer(loan_test$EMI)
+
+str(loan_test)
+
+#Making predictions on the actual test dataset -RF
+predicted_rf <- predict(rf,loan_test)
+head(predicted_rf)
+
+#Submission - RF
+vector_LoanID  <- loan_test$Loan_ID 
+my_solution_rf <- data.frame(Loan_ID = vector_LoanID, Loan_Status = predicted_rf)
+
+write.csv(my_solution_rf, file = "my_solution_rf.csv",row.names=FALSE)
+
